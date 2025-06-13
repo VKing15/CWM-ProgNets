@@ -39,12 +39,12 @@ header drone_t {
 /* 
  * drone_t header with x, y, z, xact, yact and zact
  */
-	bit<8>	x;
-	bit<8>	y;
-	bit<8>	z;
-	bit<8>	xact;
-	bit<8>	yact;
-	bit<8>	zact;
+	bit<32>	x;
+	bit<32>	y;
+	bit<32>	z;
+	bit<32>	xact;
+	bit<32>	yact;
+	bit<32>	zact;
 }
 
 
@@ -104,7 +104,6 @@ control MyIngress(inout headers hdr,
                   
                   
     action send_back() {
-		
 		//swap MAC addresses
 		bit<48> tmp_mac;
 		tmp_mac = hdr.ethernet.dstAddr;
