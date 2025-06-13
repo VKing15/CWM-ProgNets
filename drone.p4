@@ -3,12 +3,8 @@
 /*
  * P4 Drone
  *
- * This program implements a simple protocol. It can be carried over Ethernet
- * (Ethertype 0x1234).
+ * Please see the Exercise 6.pdf for detailed instructions of what the program does
  *
- *
- * If an unknown operation is specified or the header is not valid, the packet
- * is dropped
  */
 
 #include <core.p4>
@@ -33,7 +29,6 @@ header ethernet_t {
  */
 
 const bit<16> DRONE_ETYPE = 0x1234;
-const bit<8>  DRONE_D     = 0x44;   // 'D'
 
 header drone_t {
 /* 
@@ -59,17 +54,13 @@ struct headers {
     drone_t     drone;
 }
  
- /*
- * No metadata
- */
-
-struct metadata {
-    /* Empty */
-    
+struct metadata { 
     bit<32>	xcoord;
 	bit<32>	ycoord;
 	bit<32>	zcoord;
-    
+	bit<32>	xclean;
+	bit<32>	yclean;
+	bit<32>	zclean;  
 }
 
 /*************************************************************************
@@ -105,18 +96,23 @@ control MyVerifyChecksum(inout headers hdr,
 /*************************************************************************
  **************  I N G R E S S   P R O C E S S I N G   *******************
  *************************************************************************/
- 
-//register<bit<32>>(2) drone_id;
+
+
+//3 registers to store the ids of the drones in the 20x20 grid
 register<bit<32>>(20) xco;
 register<bit<32>>(20) yco;
 register<bit<32>>(20) zco;
 
+///3 registers to store the old coordinates of the drone at the appropriate id
+register<bit<32>>(100) xold;
+register<bit<32>>(100) yold;
+register<bit<32>>(100) zold;
 
 control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
                   
-                  
+    //sends back the packet with swapped ids         
     action send_back() {
 		//swap MAC addresses
 		bit<48> tmp_mac;
@@ -125,56 +121,52 @@ control MyIngress(inout headers hdr,
 		hdr.ethernet.srcAddr = tmp_mac;
 		
 		//send it back to the same port
-		standard_metadata.egress_spec = standard_metadata.ingress_port;
-		
+		standard_metadata.egress_spec = standard_metadata.ingress_port;	
 	}
 	              
-	
+	//actions for the tables to tell the drone where to move 
  	action x_okay() {
  		hdr.drone.xact = 0;
-        //send_back(); 
-    }
-    action y_okay() {
- 		hdr.drone.yact = 0;
-        //send_back(); 
-    }
-    action z_okay() {
- 		hdr.drone.zact = 0;
-        //send_back(); 
     }
     
+    action y_okay() {
+ 		hdr.drone.yact = 0;
+    }
+    
+    action z_okay() {
+ 		hdr.drone.zact = 0;
+    }
+
  	action left() {
  		hdr.drone.xact = 1;
-        //send_back(); 
     }
+    
  	action right() {
-        hdr.drone.xact = 2;
-        //send_back(); 
+        hdr.drone.xact = 2; 
     }
+    
     action backward() {
         hdr.drone.yact = 3;
-        //send_back(); 
     }
+    
     action forward() {
-        hdr.drone.yact = 4;
-        //send_back(); 
+        hdr.drone.yact = 4; 
     }
+    
     action down() {
-        hdr.drone.zact = 5;
-        //send_back();  
+        hdr.drone.zact = 5; 
     }
+    
     action up() {
         hdr.drone.zact = 6;
-        //send_back(); 
     }
     
     action operation_drop() {
         mark_to_drop(standard_metadata);
     }
     
-    
-    
-    
+
+	//tables use range to see whether the drone is to close to the edge of the coordinate space
     table xact_table {
         key = {
             hdr.drone.x        : range;
@@ -192,9 +184,6 @@ control MyIngress(inout headers hdr,
             0..2	:	right();
         }
     }
-    
-    
-    
     
     table yact_table {
         key = {
@@ -214,8 +203,7 @@ control MyIngress(inout headers hdr,
         }
     }
     
-    
-    
+
     
     table zact_table {
         key = {
@@ -236,43 +224,72 @@ control MyIngress(inout headers hdr,
     }
     
     
+    //used to remember the drone positions
     action registerwrite() {
+    
+    	//reads the old location of the drone
+ 		xold.read(meta.xclean,hdr.drone.droneid);
+ 		yold.read(meta.yclean,hdr.drone.droneid);
+ 		zold.read(meta.zclean,hdr.drone.droneid);
+ 		
+ 		//deletes the drones old positions 
+ 		xco.write(meta.xclean,0);
+ 		yco.write(meta.yclean,0);
+ 		zco.write(meta.zclean,0);
+ 		
+ 		//places the new location into the registers
  		xco.write(hdr.drone.x,hdr.drone.droneid);
  		yco.write(hdr.drone.y,hdr.drone.droneid);
  		zco.write(hdr.drone.z,hdr.drone.droneid);
- 	
+ 		
+ 		//updates the register so that this new position becomes the next iterations old position
+ 		xold.write(hdr.drone.droneid,hdr.drone.x);
+ 		yold.write(hdr.drone.droneid,hdr.drone.y);
+ 		zold.write(hdr.drone.droneid,hdr.drone.z);
     }
     
 	action registerread() {
+	
+		//reads the location of the drone to see whether its occupied
  		xco.read(meta.xcoord,hdr.drone.x);
  		yco.read(meta.ycoord,hdr.drone.y);
  		zco.read(meta.zcoord,hdr.drone.z);
     }
     
     apply {
-        if (hdr.drone.isValid()) {
+        if (hdr.drone.isValid()) { //uses the table to check whether it will drift
             xact_table.apply();
             yact_table.apply();
             zact_table.apply();
         
         
-        
-        if (hdr.drone.xact == 0 && hdr.drone.yact == 0 && hdr.drone.zact == 0){
-        	registerread();
-        	if (meta.xcoord==0 && meta.ycoord==0 && meta.zcoord==0) {
-        		registerwrite();
-        		hdr.drone.coll=0;
-        	}
-        	else if (meta.xcoord==hdr.drone.droneid && meta.ycoord==hdr.drone.droneid && meta.zcoord==hdr.drone.droneid) {
-        		hdr.drone.coll=0;
-        	}
-        	else {
-        		hdr.drone.coll=1;
-        		}
-        	}
-        send_back(); 
+		    //checks if the drone is within the safety margin
+		    if (hdr.drone.xact == 0 && hdr.drone.yact == 0 && hdr.drone.zact == 0){ 
+		    
+		    	//gets the locations
+		    	registerread();
+		    	
+		    	//checks that at least one axis is different to confirm that its empty 
+		    	if (meta.xcoord==0 || meta.ycoord==0 || meta.zcoord==0) { 
+		    	
+		    		//updates the loactions
+	 				registerwrite();
+	 				
+	 				//adds to the header that there are no collisions 
+		    		hdr.drone.coll=0; 
+		    	}
+		    	
+		    	//checks whether the drone occupying this space is itself
+		    	else if (meta.xcoord==hdr.drone.droneid && meta.ycoord==hdr.drone.droneid && meta.zcoord==hdr.drone.droneid) {
+		    		hdr.drone.coll=0; //adds to the header that there are no collisions
+		    	}
+		    	else { //another drone must be occupying this space
+		    		hdr.drone.coll=1; //adds to the header that there are no collisions
+		    		}
+		    	}
+		    send_back(); //sends back the packet after everything has been dropped
         } else {
-            operation_drop();
+            operation_drop(); //drops packet is header invalid
         }
     }
    
@@ -317,7 +334,3 @@ MyEgress(),
 MyComputeChecksum(),
 MyDeparser()
 ) main;
-
- 
- 
- 
