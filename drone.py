@@ -6,12 +6,14 @@ from scapy.all import *
 
 class Drone(Packet):
     name = "drone"
-    fields_desc = [ IntField("x", 0),
+    fields_desc = [ IntField("droneid", 0),
+    				IntField("x", 0),
                     IntField("y", 0),
                     IntField("z", 0),
                     IntField("xact", 0),
                     IntField("yact", 0),
-                    IntField("zact", 0)]
+                    IntField("zact", 0),
+                    IntField("coll", 0)]
      
 
 bind_layers(Ether, Drone, type=0x1234)
@@ -78,28 +80,29 @@ def main():
         print(s)
         try:
             #i,ts = p(s,0,[])
-            pkt = Ether(dst='e4:5f:01:84:ad:1a', type=0x1234) / Drone(x=random.randint(1,20),
-                                              y=random.randint(1,20),
-                                              z=random.randint(1,20))
-
-            pkt = pkt/' '
-
-            pkt.show()
+            pkt0 = Ether(dst='e4:5f:01:84:ad:1a', type=0x1234) / Drone(droneid=6, x= 9, y= 5, z= 17) #x=random.randint(0,20), y=random.randint(0,20), z=random.randint(0,20))
             
-            resp = srp1(pkt, iface=iface,timeout=5, verbose=False)
-            if resp:
-                drone=resp[Drone]
-                if drone:
+            
+            pkt0 = pkt0/' '
+            pkt0.show()
+            
+            resp0 = srp1(pkt0, iface=iface,timeout=5, verbose=False)
+            
+            if resp0:
+            	drone=resp0[Drone]
+            	if drone:
                     #resp.show()
-                    print("x action:", resp.xact)
-                    print("y action:", resp.yact)
-                    print("z action:", resp.zact)
-                    print("0: ok, 1: left, 2: right, 3: backward, 4: forward, 5: up, 6: down")
-                else:
+                    print("x action:", resp0.xact)
+                    print("y action:", resp0.yact)
+                    print("z action:", resp0.zact)
+                    print("Collision:", resp0.coll)
+                    print("0: ok, 1: left, 2: right, 3: backward, 4: forward, 5: down, 6: up")
+            	else:
                     print("cannot find P4calc header in the packet")
             else:
-                print("Didn't receive response")
+            	print("Didn't receive response")
                 
+
         except Exception as error:
             print(error)
 

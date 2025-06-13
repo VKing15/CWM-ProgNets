@@ -37,14 +37,16 @@ const bit<8>  DRONE_D     = 0x44;   // 'D'
 
 header drone_t {
 /* 
- * drone_t header with x, y, z, xact, yact and zact
+ * drone_t header with id, x, y, z, xact, yact and zact
  */
+ 	bit<32> droneid;
 	bit<32>	x;
 	bit<32>	y;
 	bit<32>	z;
 	bit<32>	xact;
 	bit<32>	yact;
 	bit<32>	zact;
+	bit<32>	coll;
 }
 
 
@@ -63,6 +65,11 @@ struct headers {
 
 struct metadata {
     /* Empty */
+    
+    bit<32>	xcoord;
+	bit<32>	ycoord;
+	bit<32>	zcoord;
+    
 }
 
 /*************************************************************************
@@ -98,6 +105,13 @@ control MyVerifyChecksum(inout headers hdr,
 /*************************************************************************
  **************  I N G R E S S   P R O C E S S I N G   *******************
  *************************************************************************/
+ 
+//register<bit<32>>(2) drone_id;
+register<bit<32>>(20) xco;
+register<bit<32>>(20) yco;
+register<bit<32>>(20) zco;
+
+
 control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
@@ -118,40 +132,40 @@ control MyIngress(inout headers hdr,
 	
  	action x_okay() {
  		hdr.drone.xact = 0;
-        send_back(); 
+        //send_back(); 
     }
     action y_okay() {
  		hdr.drone.yact = 0;
-        send_back(); 
+        //send_back(); 
     }
     action z_okay() {
  		hdr.drone.zact = 0;
-        send_back(); 
+        //send_back(); 
     }
     
  	action left() {
  		hdr.drone.xact = 1;
-        send_back(); 
+        //send_back(); 
     }
  	action right() {
         hdr.drone.xact = 2;
-        send_back(); 
+        //send_back(); 
     }
     action backward() {
         hdr.drone.yact = 3;
-        send_back(); 
+        //send_back(); 
     }
     action forward() {
         hdr.drone.yact = 4;
-        send_back(); 
-    }
-    action up() {
-        hdr.drone.zact = 5;
-        send_back();  
+        //send_back(); 
     }
     action down() {
+        hdr.drone.zact = 5;
+        //send_back();  
+    }
+    action up() {
         hdr.drone.zact = 6;
-        send_back(); 
+        //send_back(); 
     }
     
     action operation_drop() {
@@ -222,13 +236,41 @@ control MyIngress(inout headers hdr,
     }
     
     
+    action registerwrite() {
+ 		xco.write(hdr.drone.x,hdr.drone.droneid);
+ 		yco.write(hdr.drone.y,hdr.drone.droneid);
+ 		zco.write(hdr.drone.z,hdr.drone.droneid);
+ 	
+    }
     
+	action registerread() {
+ 		xco.read(meta.xcoord,hdr.drone.x);
+ 		yco.read(meta.ycoord,hdr.drone.y);
+ 		zco.read(meta.zcoord,hdr.drone.z);
+    }
     
     apply {
         if (hdr.drone.isValid()) {
             xact_table.apply();
             yact_table.apply();
             zact_table.apply();
+        
+        
+        
+        if (hdr.drone.xact == 0 && hdr.drone.yact == 0 && hdr.drone.zact == 0){
+        	registerread();
+        	if (meta.xcoord==0 && meta.ycoord==0 && meta.zcoord==0) {
+        		registerwrite();
+        		hdr.drone.coll=0;
+        	}
+        	else if (meta.xcoord==hdr.drone.droneid && meta.ycoord==hdr.drone.droneid && meta.zcoord==hdr.drone.droneid) {
+        		hdr.drone.coll=0;
+        	}
+        	else {
+        		hdr.drone.coll=1;
+        		}
+        	}
+        send_back(); 
         } else {
             operation_drop();
         }
